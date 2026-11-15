@@ -39,6 +39,21 @@ function quadArea(q) {
   return Math.abs(a) / 2;
 }
 
+// 모서리 4개가 순서대로 볼록 사각형을 이루고 최소 넓이 이상인지 검사 (선이 꼬이거나 한 점에 겹치는 것 방지)
+function isConvexQuad(q, minArea = 64) {
+  if (!Array.isArray(q) || q.length !== 4) return false;
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4], c = q[(i + 2) % 4];
+    const cross = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (Math.abs(cross) < 1e-3) return false;
+    const s = cross > 0 ? 1 : -1;
+    if (!sign) sign = s;
+    else if (sign !== s) return false;
+  }
+  return quadArea(q) >= minArea;
+}
+
 // 평평하게 펼 때 쓸 출력 크기: 위·아래 변, 좌·우 변의 평균 길이
 function outSize(q, maxSide) {
   const w = (dist(q[0], q[1]) + dist(q[3], q[2])) / 2;
@@ -392,7 +407,8 @@ function bsMove(e) {
   const x = Math.min(bs.src.width, Math.max(0, px / bs.k)), y = Math.min(bs.src.height, Math.max(0, py / bs.k));
   const h = bs.drag;
   if (h.kind === 'corner') {
-    bs.quad[h.i] = { x, y };
+    const next = bs.quad.map((p, i) => (i === h.i ? { x, y } : p));
+    if (isConvexQuad(next)) bs.quad[h.i] = { x, y };
   } else {
     const [TL, TR, BR, BL] = bs.quad;
     const A = h.i === 0 ? TL : BL, B = h.i === 0 ? TR : BR;
@@ -542,8 +558,14 @@ async function bsAutoFit(announce) {
   const { src } = bs;
   let q = null;
   try { q = detectQuad(src); } catch (err) { console.warn('모서리 찾기 실패', err); }
+  if (q && !isConvexQuad(q)) q = null;
   const found = !!q;
-  if (q) { try { q = refineQuad(src, q); } catch (err) { console.warn('모서리 다듬기 실패', err); } }
+  if (q) {
+    try {
+      const refined = refineQuad(src, q);
+      if (isConvexQuad(refined)) q = refined;
+    } catch (err) { console.warn('모서리 다듬기 실패', err); }
+  }
   if (!q) {
     const mx = src.width * 0.06, my = src.height * 0.08;
     q = bs.guideQuad ? bs.guideQuad.map((p) => ({ ...p })) : [{ x: mx, y: my }, { x: src.width - mx, y: my }, { x: src.width - mx, y: src.height - my }, { x: mx, y: src.height - my }];
@@ -551,7 +573,8 @@ async function bsAutoFit(announce) {
   // 가이드 틀로 찍었다면 틀 밖으로 나간 점은 틀 안으로 당긴다 (틀 밖은 스캔하지 않음)
   if (bs.guideQuad) {
     const [g0, g1, g2] = bs.guideQuad;
-    q = q.map((p) => ({ x: Math.min(g1.x, Math.max(g0.x, p.x)), y: Math.min(g2.y, Math.max(g0.y, p.y)) }));
+    const clamped = q.map((p) => ({ x: Math.min(g1.x, Math.max(g0.x, p.x)), y: Math.min(g2.y, Math.max(g0.y, p.y)) }));
+    if (isConvexQuad(clamped)) q = clamped;
   }
   bs.quad = q;
   if (bs.split) { const t = await bsSpineGuess(); bs.spine = [t, t]; }

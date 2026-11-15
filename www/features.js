@@ -274,7 +274,8 @@ $('btn-menu').addEventListener('click', () => goHome());
 function onPhotoReady() {
   // 단어장: 바로 추가 창을 띄우지 않고, 사진에서 범위를 고른 뒤 "단어 고르기"를 누르게 한다
   const vocab = pendingAct === 'vocab';
-  $('btn-open-result').textContent = vocab ? '단어 고르기' : '번역';
+  const labels = { vocab: '단어 고르기', table: '표 읽기', card: '명함 읽기' };
+  $('btn-open-result').textContent = labels[pendingAct] || '번역';
   if (vocab) { $('photo-hint').textContent = '글자 부분을 드래그해 범위를 고른 뒤 "단어 고르기"를 누르세요'; return; }
   $('photo-hint').textContent = '두 손가락으로 확대 · 글자 부분을 드래그하면 그 부분만 인식합니다';
   const act = PHOTO_ACTS[pendingAct];
@@ -297,60 +298,124 @@ document.querySelectorAll('#home .row').forEach((el) => el.addEventListener('cli
 function parseCard(text) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
   const email = (text.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/) || [''])[0];
-  const phones = [...text.matchAll(/\+?\d[\d\s\-().]{7,}\d/g)].map((m) => m[0].trim());
+  // 팩스(Fax / F.) 줄은 전화번호 후보에서 뒤로 미룬다
+  const nonFaxText = lines.filter((l) => !/\b(fax|팩스)\b|^f[.:]/i.test(l)).join('\n');
+  const findPhones = (s) => [...s.matchAll(/\+?\d[\d\s\-().]{7,}\d/g)].map((m) => m[0].trim());
+  const phones = findPhones(nonFaxText).length ? findPhones(nonFaxText) : findPhones(text);
   const phone = phones.find((p) => /010/.test(p.replace(/\D/g, ''))) || phones[0] || '';
   const plain = lines.filter((l) => !l.includes('@') && !/\d{3,}/.test(l));
-  const company = plain.find((l) => /주식회사|\(주\)|㈜|Inc|Co\.|Ltd|Corp|Company|회사|연구소|대학/i.test(l)) || '';
-  const TITLES = /^(대표|이사|팀장|과장|차장|부장|대리|사원|실장|본부장|교수|사장|원장|매니저|연구원|선임|책임|수석)/;
-  const tokens = plain.filter((l) => l !== company).flatMap((l) => l.split(/\s+/));
+  const company = plain.find((l) => /주식회사|\(주\)|㈜|Inc|Co\.|Ltd|Corp|Company|회사|연구소|대학|병원|은행|그룹/i.test(l)) || '';
+  const TITLES = /^(?:(?:수석|책임|선임|전임|주임|객원)?(?:연구원|매니저|엔지니어|디자이너|컨설턴트|교수|강사)|대표이사|대표|이사|상무|전무|부사장|사장|회장|팀장|과장|차장|부장|대리|사원|실장|본부장|센터장|원장|박사|주임|계장|소장|지점장|변호사|세무사|회계사|선임|책임|수석)$/;
+  const tokens = plain.filter((l) => l !== company).flatMap((l) => l.split(/[\s/|·,]+/)).filter(Boolean);
+  const role = tokens.find((t) => TITLES.test(t))
+    || (text.match(/\b(CEO|CTO|CFO|COO|Director|Manager|Engineer|Lead|President|VP|Professor|Partner)\b/i) || [''])[0];
   // 직함이 붙은 줄("홍길동 대표")의 이름을 우선
-  const titled = plain.filter((l) => l.split(/\s+/).some((t) => TITLES.test(t))).flatMap((l) => l.split(/\s+/));
+  const titled = plain.filter((l) => l.split(/[\s/|·,]+/).some((t) => TITLES.test(t))).flatMap((l) => l.split(/[\s/|·,]+/));
   const isName = (t) => /^[가-힣]{2,4}$/.test(t) && !TITLES.test(t);
   const name = titled.find(isName) || tokens.find(isName)
     || plain.find((l) => l !== company && /^[A-Za-z][A-Za-z .'-]{2,30}$/.test(l)) || '';
-  return { name: name.replace(/\s/g, ''), company, phone, email };
+  return { name: name.replace(/\s/g, ''), role, company, phone, email };
 }
 
+const vcardEsc = (s) => String(s ?? '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/;/g, '\\;').replace(/,/g, '\\,');
+
 function vcard(c) {
-  return ['BEGIN:VCARD', 'VERSION:3.0', `FN:${c.name}`, c.company && `ORG:${c.company}`, c.phone && `TEL;TYPE=CELL:${c.phone}`, c.email && `EMAIL:${c.email}`, 'END:VCARD']
-    .filter(Boolean).join('\r\n');
+  return [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN;CHARSET=UTF-8:${vcardEsc(c.name)}`,
+    c.company && `ORG;CHARSET=UTF-8:${vcardEsc(c.company)}`,
+    c.role && `TITLE;CHARSET=UTF-8:${vcardEsc(c.role)}`,
+    c.phone && `TEL;TYPE=CELL:${String(c.phone).trim()}`,
+    c.email && `EMAIL:${String(c.email).trim()}`,
+    'END:VCARD',
+  ].filter(Boolean).join('\r\n');
 }
 
 const shareVcard = (c) => saveOrShare(new TextEncoder().encode(vcard(c)), `${(c.name || 'contact').replace(/[^\p{L}\p{N}]+/gu, '_')}.vcf`, 'text/vcard', '연락처로 보내기');
 
+function openCardForm(c, existingId = null) {
+  openForm(existingId ? '명함 편집' : '명함 저장', [
+    { key: 'name', label: '이름', value: c.name || '' },
+    { key: 'role', label: '직함', value: c.role || '' },
+    { key: 'company', label: '회사', value: c.company || '' },
+    { key: 'phone', label: '전화', value: c.phone || '', type: 'tel' },
+    { key: 'email', label: '이메일', value: c.email || '', type: 'email' },
+  ], [
+    { label: '저장', primary: true, run(v) {
+      if (existingId) {
+        db.set('cards', db.get('cards').map((x) => (x.id === existingId ? { ...x, ...v } : x)));
+        showLibrary('cards');
+        return 'keep';
+      }
+      db.add('cards', v);
+    } },
+    { label: '연락처로 보내기', run: (v) => {
+      if (existingId) db.set('cards', db.get('cards').map((x) => (x.id === existingId ? { ...x, ...v } : x)));
+      else db.add('cards', v);
+      return shareVcard(v);
+    } },
+    { label: '닫기', run() { if (existingId) { showLibrary('cards'); return 'keep'; } } },
+  ]);
+}
+
 async function openCard() {
   const text = await needText('명함');
   if (!text) return;
-  const c = parseCard(text);
-  openForm('명함 저장', [
-    { key: 'name', label: '이름', value: c.name },
-    { key: 'company', label: '회사', value: c.company },
-    { key: 'phone', label: '전화', value: c.phone, type: 'tel' },
-    { key: 'email', label: '이메일', value: c.email, type: 'email' },
-  ], [
-    { label: '저장', primary: true, run(v) { db.add('cards', v); } },
-    { label: '연락처로 보내기', run: (v) => { db.add('cards', v); return shareVcard(v); } },
-    { label: '닫기' },
-  ]);
+  openCardForm(parseCard(text));
 }
 
 /* ---------- 표 → CSV ---------- */
 
-// 한 줄 안에서 글자 사이가 줄 높이보다 많이 벌어진 곳을 칸 경계로 본다
+// 한 줄 안에서 글자 사이가 줄 높이보다 많이 벌어진 곳을 칸으로 나누고,
+// 여러 줄의 칸 시작 위치(x0)를 모아 열(column) 경계를 맞춘 뒤 빈 칸도 자리 맞춰 채운다
 function tableRows(data) {
-  const rows = [];
+  const rawRows = [];
   for (const line of data.lines || []) {
     const words = (line.words || []).filter((w) => w.text.trim() && w.confidence >= 30);
     if (!words.length) continue;
-    const gap = Math.max(12, (line.bbox.y1 - line.bbox.y0) * 0.9);
-    const cells = [[words[0].text]];
+    const gap = Math.max(12, ((line.bbox?.y1 ?? 0) - (line.bbox?.y0 ?? 0)) * 0.9);
+    const cells = [{ words: [words[0].text], x0: words[0].bbox?.x0 ?? 0, x1: words[0].bbox?.x1 ?? 0 }];
     for (let i = 1; i < words.length; i++) {
-      if (words[i].bbox.x0 - words[i - 1].bbox.x1 > gap) cells.push([words[i].text]);
-      else cells[cells.length - 1].push(words[i].text);
+      const w = words[i];
+      const prev = cells[cells.length - 1];
+      if ((w.bbox?.x0 ?? 0) - prev.x1 > gap) {
+        cells.push({ words: [w.text], x0: w.bbox?.x0 ?? 0, x1: w.bbox?.x1 ?? 0 });
+      } else {
+        prev.words.push(w.text);
+        prev.x1 = Math.max(prev.x1, w.bbox?.x1 ?? prev.x1);
+      }
     }
-    rows.push(cells.map((c) => c.join(' ')));
+    rawRows.push(cells.map((c) => ({ text: c.words.join(' '), x0: c.x0, x1: c.x1 })));
   }
-  return rows;
+  if (!rawRows.length) return [];
+  const maxCols = Math.max(...rawRows.map((r) => r.length));
+  if (maxCols <= 1) return rawRows.map((r) => r.map((c) => c.text));
+
+  // 각 칸의 시작 x 좌표를 모아 가까운 것끼리 같은 열로 묶는다
+  const allCells = rawRows.flat();
+  const avgH = Math.max(16, (data.lines || []).reduce((s, l) => s + ((l.bbox?.y1 ?? 0) - (l.bbox?.y0 ?? 0)), 0) / Math.max(1, (data.lines || []).length));
+  const colTol = avgH * 1.6;
+  const cols = [];
+  for (const c of [...allCells].sort((a, b) => a.x0 - b.x0)) {
+    const last = cols[cols.length - 1];
+    if (!last || c.x0 - last.center > colTol) cols.push({ center: c.x0, n: 1 });
+    else { last.center = (last.center * last.n + c.x0) / (last.n + 1); last.n++; }
+  }
+  if (cols.length <= 1) return rawRows.map((r) => r.map((c) => c.text));
+
+  return rawRows.map((r) => {
+    const aligned = new Array(cols.length).fill('');
+    for (const c of r) {
+      let best = 0, bestD = Infinity;
+      for (let i = 0; i < cols.length; i++) {
+        const d = Math.abs(c.x0 - cols[i].center);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      aligned[best] = aligned[best] ? `${aligned[best]} ${c.text}` : c.text;
+    }
+    return aligned;
+  });
 }
 
 const csvCell = (s) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
@@ -358,8 +423,19 @@ const toCsv = (rows) => rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
 
 async function openTable() {
   openForm('표 → CSV', [], [{ label: '닫기' }], '<p class="status">표를 읽는 중…</p>');
-  const w = await getWorker(ocrLang.value);
-  const { data } = await w.recognize(sourceCanvas());
+  while (ocrBusy) await sleep(150);
+  ocrBusy = true;
+  let data;
+  try {
+    const w = await getWorker(ocrLang.value);
+    ({ data } = await w.recognize(sourceCanvas()));
+  } catch (err) {
+    console.error(err);
+    $('form-body').innerHTML = `<p class="status error">오류: ${esc(err.message || err)}</p>`;
+    return;
+  } finally {
+    ocrBusy = false;
+  }
   const rows = tableRows(data);
   if (!rows.length) { $('form-body').innerHTML = '<p class="status error">표를 찾지 못했습니다. 표 부분만 드래그해서 다시 해 보세요.</p>'; return; }
   const csv = toCsv(rows);
@@ -394,12 +470,27 @@ async function openVocabPicker() {
   const tokens = byLine ? text.split('\n') : text.split(/\s+/);
   const chips = [...new Set(tokens.map((t) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')).filter(Boolean))];
   const picked = new Set();
-  const html = '<p class="status" style="text-align:left;margin:0 0 8px">저장할 단어를 눌러 고르세요 (여러 개 가능)</p>'
+  const html = '<p class="status" style="text-align:left;margin:0 0 8px">저장할 단어를 눌러 고르세요 (여러 개를 골라 각각 또는 한 표현으로 담을 수 있어요)</p>'
     + `<div class="chips">${chips.map((c, i) => `<button type="button" class="chip" data-i="${i}">${esc(c)}</button>`).join('')}</div>`;
+  const selectedWords = () => [...picked].sort((x, y) => x - y).map((i) => chips[i]);
   openForm('단어 고르기', [], [
-    { label: '단어장에 담기', primary: true, run() {
-      if (!picked.size) throw new Error('단어를 하나 이상 고르세요');
-      openVocab({ text: [...picked].sort((x, y) => x - y).map((i) => chips[i]).join(' '), fromTrans: false });
+    { label: '단어장에 담기 (각각)', primary: true, async run() {
+      const words = selectedWords();
+      if (!words.length) throw new Error('단어를 하나 이상 고르세요');
+      if (words.length === 1) {
+        openVocab({ text: words[0], fromTrans: false });
+        return 'keep';
+      }
+      setStatus(formStatus, `${words.length}개 단어 뜻을 번역해 저장하는 중…`);
+      const meanings = await Promise.all(words.map((w) => translateAny(w, ocrLang.value).catch(() => '')));
+      for (let i = words.length - 1; i >= 0; i--) {
+        db.add('vocab', { word: words[i], meaning: meanings[i], lang: ocrLang.value });
+      }
+    } },
+    { label: '한 표현으로 편집', run() {
+      const words = selectedWords();
+      if (!words.length) throw new Error('단어를 하나 이상 고르세요');
+      openVocab({ text: words.join(' '), fromTrans: false });
       return 'keep';
     } },
     { label: '닫기' },
@@ -411,28 +502,33 @@ async function openVocabPicker() {
   }));
 }
 
-async function openVocab(prefill) {
+async function openVocab(prefill, existingId = null) {
   const sel = prefill || selectedText();
   const fields = [
-    { key: 'word', label: '단어·표현 (원문에서 고른 글자)', value: sel.fromTrans ? '' : sel.text },
-    { key: 'meaning', label: '뜻', value: sel.fromTrans ? sel.text : '' },
+    { key: 'word', label: '단어·표현 (원문에서 고른 글자)', value: sel.fromTrans ? '' : (sel.word ?? sel.text ?? '') },
+    { key: 'meaning', label: '뜻', value: sel.fromTrans ? sel.text : (sel.meaning ?? '') },
   ];
-  openForm('단어장에 담기', fields, [
+  openForm(existingId ? '단어 편집' : '단어장에 담기', fields, [
     { label: '저장', primary: true, run(v) {
       if (!v.word) throw new Error('단어를 입력하세요');
+      if (existingId) {
+        db.set('vocab', db.get('vocab').map((x) => (x.id === existingId ? { ...x, ...v } : x)));
+        showLibrary('vocab');
+        return 'keep';
+      }
       db.add('vocab', { ...v, lang: ocrLang.value });
     } },
     { label: '뜻 번역', keep: true, async run(v) {
       if (!v.word) throw new Error('단어를 입력하세요');
       setStatus(formStatus, '번역 중…');
-      $('f-meaning').value = await translateGoogle(v.word);
+      $('f-meaning').value = await translateAny(v.word, ocrLang.value);
       setStatus(formStatus, '');
       return 'keep';
     } },
-    { label: '닫기' },
-  ], '<p class="status">추출된 글자에서 단어를 길게 눌러 고른 뒤 이 기능을 쓰면 자동으로 채워집니다.</p>');
+    { label: '닫기', run() { if (existingId) { showLibrary('vocab'); return 'keep'; } } },
+  ], existingId ? '' : '<p class="status">추출된 글자에서 단어를 길게 눌러 고른 뒤 이 기능을 쓰면 자동으로 채워집니다.</p>');
   if (fields[0].value && !fields[1].value) {
-    try { $('f-meaning').value = await translateGoogle(fields[0].value); } catch { /* 직접 입력 가능 */ }
+    try { $('f-meaning').value = await translateAny(fields[0].value, ocrLang.value); } catch { /* 직접 입력 가능 */ }
   }
 }
 
@@ -455,11 +551,21 @@ function showLibrary(tab = 'cards') {
   let body = '', actions = [{ label: '닫기' }];
   if (tab === 'cards') {
     const list = db.get('cards');
-    body = `<ul class="rows">${list.map((c) => `<li><div class="grow">${esc(c.name || '(이름 없음)')}<small>${esc([c.company, c.phone, c.email].filter(Boolean).join(' · '))}</small></div><button data-share="${c.id}">연락처</button><button data-del="${c.id}">삭제</button></li>`).join('') || '<li>저장된 명함이 없습니다</li>'}</ul>`;
+    body = `<ul class="rows">${list.map((c) => `<li><div class="grow" data-edit-card="${c.id}" style="cursor:pointer">${esc(c.name || '(이름 없음)')}<small>${esc([c.role, c.company, c.phone, c.email].filter(Boolean).join(' · '))}</small></div><button data-share="${c.id}">연락처</button><button data-del="${c.id}">삭제</button></li>`).join('') || '<li>저장된 명함이 없습니다</li>'}</ul>`;
   } else {
     const list = db.get('vocab');
-    body = `<ul class="rows">${list.map((w) => `<li><div class="grow">${esc(w.word)}<small>${esc(w.meaning)}</small></div><button data-del="${w.id}">삭제</button></li>`).join('') || '<li>저장된 단어가 없습니다</li>'}</ul>`;
-    if (list.length) actions = [{ label: '복습하기', primary: true, keep: true, run() { reviewVocab(); return 'keep'; } }, { label: '닫기' }];
+    body = `<ul class="rows">${list.map((w) => `<li><div class="grow" data-edit-vocab="${w.id}" style="cursor:pointer">${esc(w.word)}<small>${esc(w.meaning)}</small></div><button data-del="${w.id}">삭제</button></li>`).join('') || '<li>저장된 단어가 없습니다</li>'}</ul>`;
+    if (list.length) {
+      actions = [
+        { label: '복습하기', primary: true, keep: true, run() { reviewVocab(); return 'keep'; } },
+        { label: 'CSV 내보내기', keep: true, async run() {
+          const csv = toCsv([['단어', '뜻', '언어'], ...list.map((w) => [w.word || '', w.meaning || '', w.lang || ''])]);
+          await saveOrShare(new TextEncoder().encode(`\uFEFF${csv}`), timestampName('csv', '_vocab'), 'text/csv', '단어장 CSV 내보내기');
+          return 'keep';
+        } },
+        { label: '닫기' },
+      ];
+    }
   }
   openForm('보관함', [], actions, tabBar + body);
   $('form-title').textContent = '보관함';
@@ -467,6 +573,14 @@ function showLibrary(tab = 'cards') {
   formOverlay.querySelectorAll('[data-del]').forEach((el) => el.addEventListener('click', () => {
     db.remove(tab, Number(el.dataset.del));
     showLibrary(tab);
+  }));
+  formOverlay.querySelectorAll('[data-edit-card]').forEach((el) => el.addEventListener('click', () => {
+    const c = db.get('cards').find((x) => x.id === Number(el.dataset.editCard));
+    if (c) openCardForm(c, c.id);
+  }));
+  formOverlay.querySelectorAll('[data-edit-vocab]').forEach((el) => el.addEventListener('click', () => {
+    const w = db.get('vocab').find((x) => x.id === Number(el.dataset.editVocab));
+    if (w) openVocab(w, w.id);
   }));
   formOverlay.querySelectorAll('[data-share]').forEach((el) => el.addEventListener('click', () => {
     const c = db.get('cards').find((x) => x.id === Number(el.dataset.share));
@@ -552,7 +666,12 @@ function startLive(kind) {
     sel.setAttribute('aria-label', '비추는 글자의 언어');
     sel.innerHTML = ocrLang.innerHTML;
     sel.value = ocrLang.value;
-    sel.addEventListener('change', () => { ocrLang.value = sel.value; store.set('ocrLang', sel.value); liveLayer.replaceChildren(); });
+    sel.addEventListener('change', () => {
+      ocrLang.value = sel.value;
+      store.set('ocrLang', sel.value);
+      arCache.clear();
+      liveLayer.replaceChildren();
+    });
     $('live-title').after(sel);
     setLiveHint('카메라를 글자에 비추고 잠깐 가만히 들고 계세요');
   } else {
@@ -618,14 +737,16 @@ function showCode({ text, format }) {
 
 // 원문 → 번역. 같은 글자가 조금씩 다르게 읽혀도 한 번만 번역하도록 정규화한 글자를 키로 쓴다
 const arCache = new Map();
+const AR_CACHE_MAX = 300;
 const arKey = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 async function translateLine(text) {
   const key = arKey(text);
   if (!key) return '';
   if (arCache.has(key)) return arCache.get(key);
+  if (arCache.size >= AR_CACHE_MAX) arCache.delete(arCache.keys().next().value);
   arCache.set(key, ''); // 중복 요청 방지
   try {
-    const t = await translateGoogle(text);
+    const t = await translateAny(text, ocrLang.value);
     arCache.set(key, t);
     return t;
   } catch (err) {
@@ -653,14 +774,20 @@ async function scanFrame(frame, lang, ns) {
       .filter((l) => (l.confidence ?? 1) >= 0.45 && (l.text.match(/[\p{L}\p{N}]/gu) || []).length >= minChars)
       .map((l) => ({ text: l.text.replace(/\s+/g, ' ').trim(), bbox: { x0: l.x0, y0: l.y0, x1: l.x1, y1: l.y1 } }));
   }
-  const w = await getWorker(lang);
-  // 흩어진 글자 모드. 조명이 고르지 않은 카메라 영상은 주변 밝기 기준으로 흑백 처리해야 잘 읽힌다
-  await w.setParameters({ tessedit_pageseg_mode: '11' });
-  const { data } = await w.recognize(applyScanFilter(frame.c, 'bw'));
-  const min = Math.max(25, minConfidenceFor(lang) - 10);
-  return (data.lines || [])
-    .filter((l) => readLines({ lines: [l] }, lang, min).length)
-    .map((l) => ({ text: fixCommonErrors(l.text.trim(), lang), bbox: l.bbox }));
+  while (ocrBusy) await sleep(100);
+  ocrBusy = true;
+  try {
+    const w = await getWorker(lang);
+    // 흩어진 글자 모드. 조명이 고르지 않은 카메라 영상은 주변 밝기 기준으로 흑백 처리해야 잘 읽힌다
+    await w.setParameters({ tessedit_pageseg_mode: '11' });
+    const { data } = await w.recognize(applyScanFilter(frame.c, 'bw'));
+    const min = Math.max(25, minConfidenceFor(lang) - 10);
+    return (data.lines || [])
+      .filter((l) => readLines({ lines: [l] }, lang, min).length)
+      .map((l) => ({ text: fixCommonErrors(l.text.trim(), lang), bbox: l.bbox }));
+  } finally {
+    ocrBusy = false;
+  }
 }
 
 // 화면이 많이 움직이는 중인지 (흔들릴 때 인식하면 느리기만 하고 틀린다). 24×24 흑백 비교

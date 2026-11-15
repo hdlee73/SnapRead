@@ -76,9 +76,11 @@ public class TextScanPlugin extends Plugin {
             return;
         }
         String script = call.getString("script", "latin");
+        int rotation = call.getInt("rotation", 0);
         TextRecognizer recognizer = recognizerFor(script);
         recognizer
-            .process(InputImage.fromBitmap(bitmap, 0))
+            .process(InputImage.fromBitmap(bitmap, rotation))
+            .addOnCompleteListener(task -> bitmap.recycle())
             .addOnSuccessListener(
                 text -> {
                     JSArray lines = new JSArray();
@@ -102,5 +104,18 @@ public class TextScanPlugin extends Plugin {
                 }
             )
             .addOnFailureListener(e -> call.reject("글자 인식 실패: " + e.getMessage()));
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        synchronized (this) {
+            for (TextRecognizer r : recognizers.values()) {
+                try {
+                    r.close();
+                } catch (Exception ignored) {}
+            }
+            recognizers.clear();
+        }
+        super.handleOnDestroy();
     }
 }
