@@ -54,6 +54,7 @@
         </button>
         <button id="btn-help" class="icon-btn help-btn" title="사용 방법" aria-label="사용 방법"><svg class="ic"><use href="#i-help"/></svg></button>
         <button id="btn-menu" class="icon-btn menu-btn" title="메뉴로" aria-label="메뉴로"><svg class="ic"><use href="#i-menu"/></svg></button>
+        <span id="stage-title" class="stage-title" hidden></span>
         <!-- 촬영 가이드: 기능마다 틀·안내 문구가 바뀜 (features.js) -->
         <div id="guide" class="guide" hidden>
           <div id="guide-frame" class="guide-frame"><i id="guide-spine" class="guide-spine" hidden></i></div>
@@ -146,82 +147,115 @@
     </div>
   </main>
 
-  <!-- 첫 화면: 메뉴 (아이폰 메일 앱처럼 목록형. 고르면 해당 촬영 화면으로) -->
+  <!-- 첫 화면: 스마트 대시보드 메뉴 -->
   <section id="home" class="home" aria-label="메뉴">
-    <div class="home-bar">
-      <button id="home-info" class="icon-btn info-btn" title="앱 정보" aria-label="앱 정보">
-        <svg class="ic"><use href="#i-info"/></svg><span id="home-info-dot" class="dot" hidden></span>
+    <div class="home-shell">
+      <header class="home-top">
+        <div class="home-brand">
+          <span class="brand-mark"><svg class="ic"><use href="#i-scan"/></svg></span>
+          <div>
+            <h1>Snap Read</h1>
+            <p class="home-sub">비추고 찍으면 바로 읽고 정리합니다</p>
+          </div>
+        </div>
+        <div class="home-top-actions">
+          <label class="lang-pill" title="인식할 글자 언어">
+            <svg class="ic"><use href="#i-translate"/></svg>
+            <select id="home-lang" aria-label="인식할 글자 언어"></select>
+          </label>
+          <button id="home-info" class="icon-btn info-btn" title="앱 정보" aria-label="앱 정보">
+            <svg class="ic"><use href="#i-info"/></svg><span id="home-info-dot" class="dot" hidden></span>
+          </button>
+        </div>
+      </header>
+
+      <!-- 최근 사용한 기능 바로 실행 -->
+      <button id="home-recent" class="recent-bar" type="button" hidden>
+        <span class="recent-tag">최근 사용</span>
+        <b id="home-recent-title">사진 번역</b>
+        <span class="recent-go">바로 열기 <svg class="ic chev"><use href="#i-chev"/></svg></span>
       </button>
-    </div>
-    <h1>Snap Read</h1>
-    <p class="home-sub">무엇을 할까요? 고르면 촬영 화면이 열립니다</p>
 
-    <h3 class="group-title">번역</h3>
-    <div class="group">
-        <button class="row" data-act="translate" type="button">
-          <span class="ico c-blue"><svg class="ic"><use href="#i-translate"/></svg></span>
-          <span class="txt"><b>사진 번역</b><small>찍은 사진 속 글자를 추출해 한국어로</small></span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
+      <h3 class="group-title">핵심 기능</h3>
+      <div class="bento-grid">
+        <button class="bento-card row" data-act="translate" type="button">
+          <div class="bento-top">
+            <span class="ico c-blue"><svg class="ic"><use href="#i-translate"/></svg></span>
+            <span class="bento-chip">OCR · 번역</span>
+          </div>
+          <span class="txt"><b>사진 번역</b><small>촬영·갤러리 사진 속 글자를 추출해 한국어로</small></span>
         </button>
-        <button class="row" data-act="ar" type="button">
-          <span class="ico c-teal"><svg class="ic"><use href="#i-live"/></svg></span>
-          <span class="txt"><b>실시간 번역</b><small>카메라 화면 위에 번역이 바로 겹쳐 보여요</small></span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
+        <button class="bento-card row" data-act="ar" type="button">
+          <div class="bento-top">
+            <span class="ico c-teal"><svg class="ic"><use href="#i-live"/></svg></span>
+            <span class="bento-chip live">LIVE</span>
+          </div>
+          <span class="txt"><b>실시간 번역</b><small>촬영 없이 카메라 화면 위에 번역 오버레이</small></span>
         </button>
-        <button class="row" data-act="vocab" type="button">
-          <span class="ico c-orange"><svg class="ic"><use href="#i-vocab"/></svg></span>
-          <span class="txt"><b>단어장에 담기</b><small>추출한 글자에서 고른 단어 저장</small></span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
+        <button class="bento-card row" data-act="scan" type="button">
+          <div class="bento-top">
+            <span class="ico c-green"><svg class="ic"><use href="#i-book"/></svg></span>
+            <span class="bento-chip">PDF · JPG</span>
+          </div>
+          <span class="txt"><b>북스캔 · 문서</b><small>두 쪽 분리 · 곡면 펴기 · 손가락 지우기</small></span>
         </button>
-    </div>
+        <button class="bento-card row" data-act="qr" type="button">
+          <div class="bento-top">
+            <span class="ico c-gray"><svg class="ic"><use href="#i-qr"/></svg></span>
+            <span class="bento-chip">자동 인식</span>
+          </div>
+          <span class="txt"><b>QR · 바코드</b><small>링크 열기 · 와이파이 연결 · 상품 검색</small></span>
+        </button>
+      </div>
 
-    <h3 class="group-title">스캔 · 저장</h3>
-    <div class="group">
-        <button class="row" data-act="scan" type="button">
-          <span class="ico c-green"><svg class="ic"><use href="#i-book"/></svg></span>
-          <span class="txt"><b>북스캔 · 문서 스캔</b><small>가이드 틀 · 두 쪽 분리 · 평평하게 · 연속 스캔</small></span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
-        </button>
+      <h3 class="group-title">추출 · 정리 도구</h3>
+      <div class="group">
         <button class="row" data-act="card" type="button">
           <span class="ico c-indigo"><svg class="ic"><use href="#i-card"/></svg></span>
-          <span class="txt"><b>명함 저장</b><small>이름·전화·이메일을 연락처로</small></span>
+          <span class="txt"><b>명함 저장</b><small>이름·직함·회사·전화·이메일을 연락처로</small></span>
+          <span id="badge-cards" class="row-badge" hidden></span>
           <svg class="ic chev"><use href="#i-chev"/></svg>
         </button>
         <button class="row" data-act="table" type="button">
           <span class="ico c-purple"><svg class="ic"><use href="#i-table"/></svg></span>
-          <span class="txt"><b>표 → CSV</b><small>사진 속 표를 엑셀 파일로</small></span>
+          <span class="txt"><b>표 → CSV</b><small>표의 열을 자동 정렬해 엑셀 파일로</small></span>
           <svg class="ic chev"><use href="#i-chev"/></svg>
         </button>
-    </div>
-
-    <h3 class="group-title">도구</h3>
-    <div class="group">
+        <button class="row" data-act="vocab" type="button">
+          <span class="ico c-orange"><svg class="ic"><use href="#i-vocab"/></svg></span>
+          <span class="txt"><b>단어장에 담기</b><small>추출한 단어를 골라 뜻과 함께 일괄 저장</small></span>
+          <span id="badge-vocab" class="row-badge" hidden></span>
+          <svg class="ic chev"><use href="#i-chev"/></svg>
+        </button>
         <button class="row" data-act="search" type="button">
           <span class="ico c-red"><svg class="ic"><use href="#i-search"/></svg></span>
-          <span class="txt"><b>구글 이미지 검색</b><small>찍은 사진으로 구글 렌즈 검색</small></span>
+          <span class="txt"><b>구글 이미지 검색</b><small>찍은 사물·간판을 구글 렌즈로 검색</small></span>
           <svg class="ic chev"><use href="#i-chev"/></svg>
         </button>
-        <button class="row" data-act="qr" type="button">
-          <span class="ico c-gray"><svg class="ic"><use href="#i-qr"/></svg></span>
-          <span class="txt"><b>QR·바코드</b><small>링크 열기, 와이파이, 상품 검색</small></span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
-        </button>
-    </div>
+      </div>
 
-    <h3 class="group-title">보관 · 도움말</h3>
-    <div class="group">
-        <button class="row" data-act="library" type="button">
+      <h3 class="group-title">보관함 · 안내</h3>
+      <div class="quick-pair">
+        <button class="quick-tile row" data-act="library" type="button">
           <span class="ico c-blue"><svg class="ic"><use href="#i-folder"/></svg></span>
-          <span class="txt"><b>보관함</b><small>저장한 명함 · 단어장</small></span>
+          <span class="txt">
+            <b>보관함</b>
+            <small id="home-lib-summary">저장한 명함 · 단어장</small>
+          </span>
           <svg class="ic chev"><use href="#i-chev"/></svg>
         </button>
-        <button class="row" data-act="help" type="button">
+        <button class="quick-tile row" data-act="help" type="button">
           <span class="ico c-gray"><svg class="ic"><use href="#i-help"/></svg></span>
-          <span class="txt"><b>사용 방법</b><small>메뉴별 사용법 보기</small></span>
+          <span class="txt">
+            <b>사용 방법</b>
+            <small>기능별 촬영 팁 보기</small>
+          </span>
           <svg class="ic chev"><use href="#i-chev"/></svg>
         </button>
+      </div>
+
+      <p id="home-foot" class="home-foot">Snap Read · 이현덕 (hdlee73@gmail.com)</p>
     </div>
-    <p id="home-foot" class="home-foot">Snap Read · 이현덕 (hdlee73@gmail.com)</p>
   </section>
 
   <!-- 편집·결과 시트 (명함/표/QR 결과 공용) -->

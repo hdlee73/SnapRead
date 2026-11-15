@@ -8,7 +8,7 @@ const inCameraMode = () => document.body.classList.contains('mode-camera');
 
 const db = {
   get(key) { try { return JSON.parse(store.get(key)) || []; } catch { return []; } },
-  set(key, list) { store.set(key, JSON.stringify(list)); },
+  set(key, list) { store.set(key, JSON.stringify(list)); if (typeof refreshHomeStats === 'function') refreshHomeStats(); },
   add(key, item) { const l = db.get(key); l.unshift({ id: Date.now(), ...item }); db.set(key, l); },
   remove(key, id) { db.set(key, db.get(key).filter((x) => x.id !== id)); },
 };
@@ -244,6 +244,12 @@ document.querySelectorAll('input[name="book-mode"]').forEach((el) => el.addEvent
 function onCameraMode() {
   $('book-bar').hidden = pendingAct !== 'scan';
   if (typeof updateBookBar === 'function') updateBookBar();
+  const st = $('stage-title');
+  if (st) {
+    const title = HELP[pendingAct]?.title || '';
+    st.textContent = title;
+    st.hidden = !title || pendingAct === 'ar' || pendingAct === 'qr';
+  }
   layoutGuide();
 }
 
@@ -259,6 +265,34 @@ const PHOTO_ACTS = {
   card: openCard, table: openTable,
 };
 
+// 첫 화면의 보관함 개수·최근 사용 기능·언어 선택 표시 갱신
+function refreshHomeStats() {
+  const cardsN = db.get('cards').length;
+  const vocabN = db.get('vocab').length;
+  const bc = $('badge-cards'), bv = $('badge-vocab'), sum = $('home-lib-summary');
+  if (bc) { bc.textContent = `${cardsN}장`; bc.hidden = !cardsN; }
+  if (bv) { bv.textContent = `${vocabN}개`; bv.hidden = !vocabN; }
+  if (sum) {
+    sum.textContent = (cardsN || vocabN)
+      ? `명함 ${cardsN}장 · 단어 ${vocabN}개 저장됨`
+      : '저장한 명함 · 단어장';
+  }
+  const lastAct = store.get('lastAct');
+  const recentBtn = $('home-recent');
+  const recentTitle = $('home-recent-title');
+  if (recentBtn && recentTitle) {
+    if (lastAct && HELP[lastAct]) {
+      recentTitle.textContent = HELP[lastAct].title;
+      recentBtn.dataset.act = lastAct;
+      recentBtn.hidden = false;
+    } else {
+      recentBtn.hidden = true;
+    }
+  }
+  const hl = $('home-lang');
+  if (hl && hl.value !== ocrLang.value) hl.value = ocrLang.value;
+}
+
 function goHome(force = false) {
   if (!force && typeof bookPages !== 'undefined' && bookPages.length && !confirm(`찍어 둔 ${bookPages.length}쪽이 사라집니다. 메뉴로 갈까요?`)) return;
   if (typeof resetBook === 'function') resetBook();
@@ -266,6 +300,9 @@ function goHome(force = false) {
   hasPhoto = false;
   stopLive();
   formOverlay.hidden = true;
+  const st = $('stage-title');
+  if (st) st.hidden = true;
+  refreshHomeStats();
   setMode('home');
 }
 $('btn-menu').addEventListener('click', () => goHome());
@@ -282,16 +319,36 @@ function onPhotoReady() {
   if (act) setTimeout(act, 0);
 }
 
-document.querySelectorAll('#home .row').forEach((el) => el.addEventListener('click', () => {
-  const act = el.dataset.act;
+function launchAct(act) {
+  if (!act) return;
   if (act === 'library') { showLibrary(); return; }
   if (act === 'help') { showAllHelp(); return; }
   pendingAct = act;
+  if (HELP[act]) store.set('lastAct', act);
+  refreshHomeStats();
   if (typeof resetBook === 'function') resetBook();
   setMode('camera');
   if (LIVE_ACTS[act]) setTimeout(LIVE_ACTS[act], 0);
   if (!store.get(`help_${act}`)) showHelp(act, { first: true });
-}));
+}
+
+document.querySelectorAll('#home .row').forEach((el) => el.addEventListener('click', () => launchAct(el.dataset.act)));
+$('home-recent')?.addEventListener('click', (e) => launchAct(e.currentTarget.dataset.act));
+
+// 첫 화면 언어 선택기 ↔ 촬영/결과 화면 언어 선택기 동기화
+(() => {
+  const hl = $('home-lang');
+  if (!hl) return;
+  hl.innerHTML = ocrLang.innerHTML;
+  hl.value = ocrLang.value;
+  hl.addEventListener('change', () => {
+    ocrLang.value = hl.value;
+    store.set('ocrLang', hl.value);
+    getWorker(hl.value).catch(() => {});
+  });
+  ocrLang.addEventListener('change', () => { hl.value = ocrLang.value; });
+})();
+refreshHomeStats();
 
 /* ---------- 명함 ---------- */
 
