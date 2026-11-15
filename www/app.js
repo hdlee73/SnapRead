@@ -160,10 +160,17 @@ $('btn-rotate').addEventListener('click', () => {
   lastTranslated = null;
   clearRegion();
   resetView();
-  if (autoRun.checked) runOcr();
+  if (shouldAutoOcr()) runOcr();
 });
 
 /* ---------- 찍은 사진 ---------- */
+
+// 북스캔·이미지 검색·표(전용 인식) 등 일반 문단 OCR 이 필요 없는 기능에서는 자동 OCR 을 건너뛴다
+function shouldAutoOcr() {
+  if (!autoRun.checked) return false;
+  const act = typeof pendingAct === 'string' ? pendingAct : null;
+  return !act || act === 'translate' || act === 'card' || act === 'vocab';
+}
 
 function drawToCanvas(source, w, h, crop = { x: 0, y: 0 }) {
   const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
@@ -175,7 +182,7 @@ function drawToCanvas(source, w, h, crop = { x: 0, y: 0 }) {
   clearRegion();
   resetView();
   setMode('photo');
-  if (autoRun.checked) runOcr();
+  if (shouldAutoOcr()) runOcr();
   if (typeof onPhotoReady === 'function') onPhotoReady();
 }
 
@@ -341,7 +348,8 @@ function endDrag(e) {
   region = rect;
   btnFull.hidden = false;
   photoHint.hidden = true;
-  runOcr();
+  if (pendingAct === 'table' && typeof openTable === 'function') openTable();
+  else if (shouldAutoOcr()) runOcr();
 }
 
 canvas.addEventListener('pointerup', endDrag);
@@ -349,7 +357,8 @@ canvas.addEventListener('pointercancel', endDrag);
 
 btnFull.addEventListener('click', () => {
   clearRegion();
-  runOcr();
+  if (pendingAct === 'table' && typeof openTable === 'function') openTable();
+  else if (shouldAutoOcr()) runOcr();
 });
 
 // 접기·펼치기·회전으로 화면 크기가 바뀌면 선택 영역 표시 위치를 다시 계산
@@ -662,6 +671,16 @@ async function translateMyMemory(text, source) {
   return out.join('\n');
 }
 
+// Google 번역 실패 시 MyMemory 로 재시도 (공용)
+async function translateAny(text, lang = ocrLang.value) {
+  try {
+    return await translateGoogle(text);
+  } catch (err) {
+    console.warn('Google 번역 실패, MyMemory 로 재시도', err);
+    return translateMyMemory(text, LANG_MAP[lang] || 'en');
+  }
+}
+
 let transRun = 0;
 let lastTranslated = null; // 마지막으로 번역한 원문
 
@@ -675,13 +694,7 @@ async function runTranslate() {
   wantTranslate = false;
   setStatus(transStatus, '번역 중…');
   try {
-    let result;
-    try {
-      result = await translateGoogle(text);
-    } catch (err) {
-      console.warn('Google 번역 실패, MyMemory 로 재시도', err);
-      result = await translateMyMemory(text, LANG_MAP[ocrLang.value] || 'en');
-    }
+    const result = await translateAny(text, ocrLang.value);
     if (run !== transRun) return;
     transText.value = result;
     lastTranslated = text;
@@ -707,6 +720,8 @@ function closePopup() {
 $('btn-open-result').addEventListener('click', () => {
   if (!hasPhoto) return;
   if (pendingAct === 'vocab') { openVocabPicker(); return; }
+  if (pendingAct === 'table' && typeof openTable === 'function') { openTable(); return; }
+  if (pendingAct === 'card' && typeof openCard === 'function') { openCard(); return; }
   popup.hidden = false;
   const text = ocrText.value.trim();
   if (ocrBusy) {
@@ -723,7 +738,7 @@ $('btn-close-result').addEventListener('click', closePopup);
 popup.addEventListener('click', (e) => { if (e.target === popup) closePopup(); });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!popup.hidden) closePopup();
+  handleBack();
 });
 
 $('btn-copy').addEventListener('click', async () => {
@@ -1069,6 +1084,23 @@ $('info-recheck').addEventListener('click', () => checkUpdate({ manual: true }))
 // 알림을 누르면 릴리스 페이지로 이동
 plugins.LocalNotifications?.addListener?.('localNotificationActionPerformed', (e) => {
   window.open(e.notification?.extra?.url || RELEASES_URL, '_blank');
+});
+
+// 뒤로 가기(안드로이드 버튼 · Escape 키): 열려 있는 창부터 차례로 닫고, 촬영 화면에서는 메뉴로 돌아간다
+function handleBack() {
+  if (!infoOverlay.hidden) { infoOverlay.hidden = true; return true; }
+  const formEl = $('form-overlay');
+  if (formEl && !formEl.hidden) { formEl.hidden = true; return true; }
+  const bsEl = $('bs');
+  if (bsEl && !bsEl.hidden && typeof bsClose === 'function') { bsClose(); return true; }
+  if (!popup.hidden) { closePopup(); return true; }
+  if (document.body.classList.contains('mode-photo')) { setMode('camera'); return true; }
+  if (document.body.classList.contains('mode-camera') && typeof goHome === 'function') { goHome(); return true; }
+  return false;
+}
+
+plugins.App?.addListener?.('backButton', () => {
+  if (!handleBack()) plugins.App.exitApp?.();
 });
 
 loadCurrentVersion().then(() => checkUpdate());

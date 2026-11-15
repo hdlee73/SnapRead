@@ -425,11 +425,6 @@ select {
 .rows button { font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
 .sum { margin: 8px 0; font-weight: 600; }
 .card-face { padding: 26px 14px; margin-bottom: 12px; text-align: center; font-size: 22px; font-weight: 600; border-radius: 12px; background: var(--field); cursor: pointer; word-break: break-all; }
-.live-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
-.ar-label {
-  position: absolute; padding: 1px 4px; border-radius: 4px; line-height: 1.15; overflow: hidden;
-  background: rgba(0, 0, 0, .78); color: #fff; font-weight: 600;
-}
 /* ---------- 실시간 번역 / QR 화면 ---------- */
 /* 촬영 버튼이 없는 화면: 카메라가 화면 전체를 쓰고 번역만 겹쳐 보인다 */
 body.live-on #camera-controls { display: none; }
@@ -477,7 +472,8 @@ body:not(.mode-camera) .guide, body.live-on .guide-frame:not(.live-frame) { disp
 }
 .guide-frame.dim { box-shadow: 0 0 0 9999px rgba(0, 0, 0, .38); }
 .guide-frame.rounded { border-radius: 14px; }
-.guide-frame.grid {
+.guide-frame.grid::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
   background-image:
     linear-gradient(rgba(255,255,255,.22) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,.22) 1px, transparent 1px);
